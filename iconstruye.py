@@ -30,10 +30,8 @@ class FirefoxBrowser(object):
         profile = webdriver.FirefoxProfile()
         profile.accept_untrusted_certs = True
         options = Options()
-        #options.add_argument("--headless")
-
+        options.add_argument("--headless")
         options.add_argument(f'User-Agent={FirefoxBrowser.user_agent}')
-
         return webdriver.Firefox(options=options, firefox_profile=profile)
 
         
@@ -48,7 +46,7 @@ class ChromeBrowser(object):
         options.add_argument('ignore-certificate-errors')
         options.add_argument("--headless")
         return webdriver.Chrome(options=options)
-    
+
 
 class iConstruye(object):
     """
