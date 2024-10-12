@@ -6,12 +6,16 @@ from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import StaleElementReferenceException
+from selenium.webdriver.common.action_chains import ActionChains
+from selenium.webdriver.common.keys import Keys
 import time
 import os
 import csv
 from dotenv import load_dotenv
 
 load_dotenv()
+
 
 class FirefoxBrowser(object):
     user_agent = ''
@@ -42,6 +46,7 @@ class ChromeBrowser(object):
     def get_browser(self):
         options = webdriver.ChromeOptions()
         options.add_argument('ignore-certificate-errors')
+        options.add_argument("--headless")
         return webdriver.Chrome(options=options)
     
 
@@ -67,60 +72,118 @@ class iConstruye(object):
         Abre la lupa de este elemento
         '''
 
-        print('Extrayendo detalles de enlace...')
-        enlace = obj.find_elements(By.TAG_NAME, "a")[0]
-        enlace.click()
+        print(f'Extrayendo detalles de enlace {_id}...')
+        try:
+            enlace = obj.find_elements(By.TAG_NAME, "a")[0]
+            enlace.click()
+        except StaleElementReferenceException:
+            return None
 
         element = self.wait.until(EC.visibility_of_element_located((By.ID, 'tblDetalle')))
         tblDetalle  = self.browser.find_element(By.ID, 'tblDetalle')
 
         print('tblDetalle obtenida')
-        print(tblDetalle)
         time.sleep(2)
         
         rows = tblDetalle.find_elements(By.TAG_NAME, "tr")
         detalles = []
+        master = {}
         for row in rows[1:]:
             cells = row.find_elements(By.TAG_NAME, "td")
             if len(cells) >= 9:
-                detalles.append({
-                                'nomina_id':_id,
-                                'no_grupo':cells[0].text,
-                                'rut_proveedor':cells[1].text,
-                                'razon_social':cells[2].text,
-                                'total_a_pagar_por_proveedor':cells[3].text,
-                                'no_documento':cells[4].text,
-                                'tipo_documento':cells[5].text,
-                                'fecha_emision':cells[6].text,
-                                'total_a_pagar_por_documento':cells[7].text,
-                                'forma_de_pago':cells[8].text,
-                                'glosa':cells[9].text})
+                master = {
+                        'nomina_id':_id,
+                        'no_grupo':cells[0].text,
+                        'rut_proveedor':cells[1].text,
+                        'razon_social':cells[2].text,
+                        'total_a_pagar_por_proveedor':cells[3].text,
+                        'no_documento':cells[4].text,
+                        'tipo_documento':cells[5].text,
+                        'fecha_emision':cells[6].text,
+                        'total_a_pagar_por_documento':cells[7].text,
+                        'forma_de_pago':cells[8].text,
+                        'glosa':cells[9].text
+                        }
+                detalles.append(master)
+            elif len(cells) == 7:
+                try:
+                    slave = {
+                            'nomina_id':master['nomina_id'],
+                            'no_grupo':master['no_grupo'],
+                            'rut_proveedor':master['rut_proveedor'],
+                            'razon_social':master['razon_social'],
+                            'total_a_pagar_por_proveedor':master['total_a_pagar_por_proveedor'],
+                            'no_documento':cells[0].text,
+                            'tipo_documento':cells[1].text,
+                            'fecha_emision':cells[2].text,
+                            'total_a_pagar_por_documento':cells[3].text,
+                            'forma_de_pago':cells[4].text,
+                            'glosa':cells[5].text
+                            }
+                    detalles.append(slave)
+                except Exception as e:
+                    print(master, _id)
+                    print(e)
+            else:
+                continue
+
         print('Hecho')
         return detalles
 
-    def extraer_enlaces_tabla(self) -> list:
+    def next_pagination(self):
         '''
-        Extraer enlaces de la tabla
+        Obtiene los elementos de paginacion
         '''
         
+        element = self.wait.until(EC.visibility_of_element_located((By.ID, 'Table1')))
+        tabla_pagination = self.browser.find_element(By.ID, 'Table1')
+        row = tabla_pagination.find_elements(By.TAG_NAME, "tr")[0]
+        bloques = row.find_elements(By.TAG_NAME, "td")
+        
+        if len(bloques) == 3:
+            link = bloques[2].find_elements(By.TAG_NAME, "a")[0]
+            return link
+        else:
+            return None
+                                                            
+    def extraer_nominas_generales(self) -> list:
+        '''
+        Extraer enlaces de las nominas generales
+        '''
+
         print('Extrayendo enlaces...')
         enlaces = []
-        element = self.wait.until(EC.visibility_of_element_located((By.ID, 'tblNominas')))
-        tabla_nominas = self.browser.find_element(By.ID, 'tblNominas')
 
-        print('GET tabla_nominas')
-        #wait = WebDriverWait(self.browser, 10)
-        #pagination = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'pagination')))
-        #pages = pagination.find_elements(By.TAG_NAME, "a")
-        #page_numbers = []
-        #for page in pages:
-        #    page.click()
-
-        rows = tabla_nominas.find_elements(By.TAG_NAME, "tr")
         ind = 0
-        for row in rows[1:]:
+        real_ind = 0
+        while True:
+
             ind += 1
+            real_ind += 1
+
+            if real_ind == 51:
+                real_ind = 1
+                
+                next_btn = self.next_pagination()
+                if next_btn:
+                    print('Llevando a proxima pagina')
+                    next_btn.click()
+                else:
+                    break
+                
+            print('Cargando tabla_nominas...')
+            element = self.wait.until(EC.visibility_of_element_located((By.ID, 'tblNominas')))
+            tabla_nominas = self.browser.find_element(By.ID, 'tblNominas')
+
+            rows = tabla_nominas.find_elements(By.TAG_NAME, "tr")
+            total_rows = len(rows)
+            
+            if real_ind == total_rows:
+                break
+            
+            row = rows[real_ind]
             cells = row.find_elements(By.TAG_NAME, "td")
+            
             if len(cells) >= 10:
                 enlaces.append({
                                 'id':ind,
@@ -134,7 +197,13 @@ class iConstruye(object):
                                 'estado_nomina':cells[7].text,
                                 'estado_publicacion':cells[8].text,
                                 'opciones':cells[9]})
-        print('Hecho')
+                detalles_finales = []
+                l = enlaces[-1]
+                detalle = self.detalle_de_enlace(obj=l.get('opciones'), _id=l.get('id'))
+                detalles_finales.append(detalle)
+                self.agregar_detalle_csv(filename='nominas_detalle.csv', data=detalles_finales, first_time=True if ind==1 else False)
+                self.browser.back()
+        self.agregar_nominas(filename='nomina_general.csv', data=enlaces)
         return enlaces
         
     def listar_nomina(self, url):
@@ -147,22 +216,22 @@ class iConstruye(object):
         element = self.wait.until(EC.visibility_of_element_located((By.ID, 'btnBuscar')))
         btn_buscar = self.browser.find_element(By.ID, 'btnBuscar')
         btn_buscar.click()
-
         print('Hecho')
 
-    def crear_csv_detalle(self, filename:str, data:list):
+    def agregar_detalle_csv(self, filename:str, data:list, first_time:bool=True):
         '''
         Crear archivo CSV con los datos
         '''
         print('Creando CSV Detalle...')
         
-        with open(filename, mode='w', newline='') as file:
+        with open(filename, mode='a', newline='') as file:
             # -- Obtener los titulos de las celdas
             headers = data[0][0].keys()
             
             # -- Constructor de CSV
             writer = csv.DictWriter(file, fieldnames=headers)
-            writer.writeheader()
+            if first_time:
+                writer.writeheader()
 
             # -- Escribir los datos en el archivo
             for lista in data:
@@ -171,12 +240,12 @@ class iConstruye(object):
                 
         print('Hecho')
         
-    def crear_csv(self, filename:str, data:list):
+    def agregar_nominas(self, filename:str, data:list):
         '''
         Crear archivo CSV con los datos
         '''
         print('Creando CSV...')
-        with open(filename, mode='w', newline='') as file:
+        with open(filename, mode='a', newline='') as file:
             # -- Obtener los titulos de las celdas
             headers = data[0].keys()
 
@@ -207,22 +276,20 @@ class iConstruye(object):
         # -- Dar clic en boton Login
         self.browser.find_element(By.ID, 'btnIniciaSessionUOC').click()
 
+
+file = open('nomina_general.csv', mode='w')
+file.close()
+file = open('nominas_detalle.csv', mode='w')
+file.close()
+
 ic = iConstruye(ChromeBrowser())
 ic.login(url='https://cl.iconstruye.com/loginsso.aspx?hsCtaTracking=c5739d9b-1567-4a49-90d4-9e8e1701f105%7Cc9ffe135-4402-4101-a071-33ca6e5227d4')
 time.sleep(5)
 ic.listar_nomina(url="https://cl.iconstruye.com/Nomina/Inactiva/listar.aspx")
 time.sleep(2)
 
-enlaces = ic.extraer_enlaces_tabla()
-ic.crear_csv(filename='nomina_general.csv', data=enlaces)
-
-detalles_finales = []
-for l in enlaces:
-    detalle = ic.detalle_de_enlace(obj=l.get('opciones'), _id=l.get('id'))
-    detalles_finales.append(detalle)
-    ic.browser.back()
-
-ic.crear_csv_detalle(filename='nominas_detalle.csv', data=detalles_finales)
+enlaces = ic.extraer_nominas_generales()
 
 time.sleep(3)
 ic.browser.quit()
+del ic
